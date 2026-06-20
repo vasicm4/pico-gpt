@@ -10,20 +10,17 @@ class DynamicBatchLoader:
         self.block_size = block_size
         self.swap_every = swap_every_iterations
 
-        # Discover both train and validation chunks
         all_files = os.listdir(chunk_dir)
         self.chunk_files = {
             'train': sorted([f for f in all_files if f.startswith("train_chunk_") and f.endswith(".txt")]),
             'val': sorted([f for f in all_files if f.startswith("tiny_stories_val") and f.endswith(".txt")]),
         }
 
-        # Track indices and iterations separately for each split
         self.current_chunk_idx = {'train': 0, 'val': 0}
         self.iteration_counter = {'train': 0, 'val': 0}
 
-        # Keep a cache of loaded data for active splits
         self.loaded_data = {'train': None, 'val': None}
-        self.char_to_int = None  # To be built from text or passed via tokenizer
+        self.char_to_int = None
 
     def _load_chunk(self, split):
         chunks = self.chunk_files[split]
@@ -38,22 +35,18 @@ class DynamicBatchLoader:
         with open(target_file, "r", encoding="utf-8") as f:
             text = f.read()
 
-        # Build vocabulary dynamically if not already established
         if self.char_to_int is None:
             # chars = sorted(list(set(text)))
             chars = sorted(list(set(" \n\t0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.,?!;:'\"-—…()[]{}*_&$%/\\“”‘’")))
             self.char_to_int = {ch: i for i, ch in enumerate(chars)}
 
-        # Safely encode text mapping unknown characters to 0 if necessary
         encoded = [self.char_to_int.get(c, 0) for c in text]
         self.loaded_data[split] = np.array(encoded, dtype=np.int32)
 
     def get_batch(self, split, batch_size, block_size):
-        # 1. Load initial data chunk if it doesn't exist yet
         if self.loaded_data[split] is None:
             self._load_chunk(split)
 
-        # 2. Check if it's time to swap chunks for this split
         elif self.iteration_counter[split] > 0 and self.iteration_counter[split] % self.swap_every == 0:
             total_chunks = len(self.chunk_files[split])
             self.current_chunk_idx[split] = (self.current_chunk_idx[split] + 1) % total_chunks
@@ -62,12 +55,9 @@ class DynamicBatchLoader:
         self.iteration_counter[split] += 1
         data = self.loaded_data[split]
 
-        # 3. Sample random offsets for the context windows
         ix = np.random.randint(0, len(data) - block_size, batch_size)
 
-        # 4. Extract inputs (x) and targets (y shifted by 1)
         x_np = np.stack([data[i: i + block_size] for i in ix])
         y_np = np.stack([data[i + 1: i + block_size + 1] for i in ix])
 
-        # 5. Convert to PyTorch long Tensors for model processing
         return torch.tensor(x_np, dtype=torch.long), torch.tensor(y_np, dtype=torch.long)
