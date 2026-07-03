@@ -1,110 +1,124 @@
-"""
-Causal Grouped‑Query Attention (GQA) block implemented with NumPy.
+"""Causal (multi-head) attention block with manual forward/backward (NumPy).
 
-If you want GPU acceleration, replace the import with:
-    import cupy as np
-and the rest of the code works unchanged.
+Despite the 'GQA' name this is plain MHA (kv heads == q heads), matching the
+reference. No biases. RoPE applied to q and k.
 """
 import numpy as np
 from .position import RoPE
+# import cupy as np
 
 def softmax(x, axis=-1):
-    """Numerically stable softmax."""
-    x_max = np.max(x, axis=axis, keepdims=True)
-    e_x = np.exp(x - x_max)
-    return e_x / np.sum(e_x, axis=axis, keepdims=True)
+    x = x - np.max(x, axis=axis, keepdims=True)
+    e = np.exp(x)
+    return e / np.sum(e, axis=axis, keepdims=True)
+
 
 class CausalGQABlock:
-    def __init__(self, d_model: int, n_heads: int, head_dim: int, max_seq_len: int):
-        """
-        Parameters
-        ----------
-        d_model : int
-            Model dimension (input and output feature size).
-        n_heads : int
-            Number of query heads.
-        head_dim : int
-            Dimensionality of each head (must be even for RoPE).
-        max_seq_len : int
-            Maximum sequence length for the causal mask and RoPE.
-        """
+    def __init__(self, d_model: int, n_heads: int, head_dim: int, max_seq_len: int,
+                 dtype=np.float32):
         if head_dim % 2 != 0:
             raise ValueError("head_dim must be even for RoPE")
         self.d_model = d_model
         self.n_heads = n_heads
         self.head_dim = head_dim
         self.max_seq_len = max_seq_len
+        self.dtype = dtype
+        hd = n_heads * head_dim
 
-        # Projection matrices (no bias, following typical LLM practice)
-        self.w_q = np.random.randn(d_model, n_heads * head_dim).astype(np.float32) * np.sqrt(2.0 / (d_model + n_heads * head_dim))
-        self.w_k = np.random.randn(d_model, n_heads * head_dim).astype(np.float32) * np.sqrt(2.0 / (d_model + n_heads * head_dim))
-        self.w_v = np.random.randn(d_model, n_heads * head_dim).astype(np.float32) * np.sqrt(2.0 / (d_model + n_heads * head_dim))
-        self.w_o = np.random.randn(n_heads * head_dim, d_model).astype(np.float32) * np.sqrt(2.0 / (n_heads * head_dim + d_model))
+        def init(a, b):
+            return (np.random.randn(a, b) * np.sqrt(2.0 / (a + b))).astype(dtype)
 
-        # RoPE instance
-        self.rope = RoPE(head_dim, max_seq_len)
+        # stored as (out, in), applied as x @ W.T   (mirrors torch.nn.Linear)
+        self.w_q = init(hd, d_model)
+        self.w_k = init(hd, d_model)
+        self.w_v = init(hd, d_model)
+        self.w_o = init(d_model, hd)
 
-        # Pre‑computed causal mask (lower triangular)
-        mask = np.tril(np.ones((max_seq_len, max_seq_len), dtype=np.float32))
-        # Where mask == 0 we will later set -inf
-        self.register_buffer("mask", mask)
+        self.rope_q = RoPE(head_dim, max_seq_len, dtype=dtype)
+        self.rope_k = RoPE(head_dim, max_seq_len, dtype=dtype)
 
-    def register_buffer(self, name, tensor):
-        setattr(self, name, tensor)
+        self.mask = np.tril(np.ones((max_seq_len, max_seq_len), dtype=bool))
+        self.g = {k: np.zeros_like(getattr(self, k))
+                  for k in ("w_q", "w_k", "w_v", "w_o")}
+        self._cache = None
+
+    _param_names = ("w_q", "w_k", "w_v", "w_o")
+
+    def params(self):
+        return [getattr(self, n) for n in self._param_names]
+
+    def grads(self):
+        return [self.g[n] for n in self._param_names]
 
     def forward(self, x):
-        """
-        Parameters
-        ----------
-        x : np.ndarray
-            Input tensor of shape (batch, seq_len, d_model)
+        B, T, C = x.shape
+        H, hd = self.n_heads, self.head_dim
+        scale = 1.0 / np.sqrt(hd)
 
-        Returns
-        -------
-        np.ndarray
-            Output tensor of same shape as input.
-        """
-        batch, seq_len, _ = x.shape
-        if seq_len > self.max_seq_len:
-            raise ValueError(f"Sequence length {seq_len} exceeds maximum {self.max_seq_len}")
+        xf = x.reshape(-1, C)                                  # (B*T, C)
+        q = (xf @ self.w_q.T).reshape(B, T, H, hd)
+        k = (xf @ self.w_k.T).reshape(B, T, H, hd)
+        v = (xf @ self.w_v.T).reshape(B, T, H, hd)
 
-        # Linear projections
-        q = x @ self.w_q.T  # (batch, seq_len, n_heads * head_dim)
-        k = x @ self.w_k.T
-        v = x @ self.w_v.T
+        q = self.rope_q.forward(q)                             # (B,T,H,hd)
+        k = self.rope_k.forward(k)
 
-        # Reshape to (batch, seq_len, n_heads, head_dim)
-        q = q.reshape(batch, seq_len, self.n_heads, self.head_dim)
-        k = k.reshape(batch, seq_len, self.n_heads, self.head_dim)
-        v = v.reshape(batch, seq_len, self.n_heads, self.head_dim)
+        qh = q.transpose(0, 2, 1, 3)                           # (B,H,T,hd)
+        kh = k.transpose(0, 2, 1, 3)
+        vh = v.transpose(0, 2, 1, 3)
 
-        # Apply RoPE to q and k
-        q = self.rope.forward(q)
-        k = self.rope.forward(k)
+        scores = np.matmul(qh, kh.transpose(0, 1, 3, 2)) * scale   # (B,H,T,T)
+        m = self.mask[:T, :T][None, None]                     # (1,1,T,T) bool
+        scores = np.where(m, scores, -1e9)
+        attn = softmax(scores, axis=-1)                       # (B,H,T,T)
 
-        # Transpose to (batch, n_heads, seq_len, head_dim) for matmul
-        q = q.transpose(0, 2, 1, 3)  # (batch, n_heads, seq_len, head_dim)
-        k = k.transpose(0, 2, 1, 3)
-        v = v.transpose(0, 2, 1, 3)
+        ctx = np.matmul(attn, vh)                             # (B,H,T,hd)
+        ctx_bt = ctx.transpose(0, 2, 1, 3).reshape(B, T, H * hd)
+        out = ctx_bt.reshape(-1, H * hd) @ self.w_o.T         # (B*T, C)
+        out = out.reshape(B, T, C)
 
-        # Scaled dot‑product attention
-        # scores shape: (batch, n_heads, seq_len, seq_len)
-        scores = np.matmul(q, k.transpose(0, 1, 3, 2)) / np.sqrt(self.head_dim)
+        self._cache = (xf, qh, kh, vh, attn, ctx_bt, m, scale, B, T, C, H, hd)
+        return out
 
-        # Apply causal mask
-        mask = self.mask[:seq_len, :seq_len]  # (seq_len, seq_len)
-        mask = mask[None, None, :, :]         # (1, 1, seq_len, seq_len)
-        scores = np.where(mask == 0, -1e9, scores)  # large negative instead of -inf for stability
+    def backward(self, dout):
+        (xf, qh, kh, vh, attn, ctx_bt, m, scale,
+         B, T, C, H, hd) = self._cache
 
-        # Softmax over key dimension
-        attn_weights = softmax(scores, axis=-1)  # (batch, n_heads, seq_len, seq_len)
+        dof = dout.reshape(-1, C)                             # (B*T, C)
+        ctx_flat = ctx_bt.reshape(-1, H * hd)
+        self.g["w_o"] = dof.T @ ctx_flat                     # (C, H*hd)
+        dctx_bt = (dof @ self.w_o).reshape(B, T, H, hd)      # (B,T,H,hd)
+        dctx = dctx_bt.transpose(0, 2, 1, 3)                 # (B,H,T,hd)
 
-        # Weighted sum of values
-        context = np.matmul(attn_weights, v)  # (batch, n_heads, seq_len, head_dim)
+        # ctx = attn @ v
+        dattn = np.matmul(dctx, vh.transpose(0, 1, 3, 2))    # (B,H,T,T)
+        dvh = np.matmul(attn.transpose(0, 1, 3, 2), dctx)    # (B,H,T,hd)
 
-        # Concatenate heads: (batch, seq_len, n_heads * head_dim)
-        context = context.transpose(0, 2, 1, 3).reshape(batch, seq_len, self.n_heads * self.head_dim)
+        # softmax backward (row-wise)
+        s = np.sum(dattn * attn, axis=-1, keepdims=True)
+        dscores = attn * (dattn - s)                         # (B,H,T,T)
+        dscores = np.where(m, dscores, 0.0)                  # masked entries are constants
+        dscores *= scale
 
-        # Output projection
-        output = context @ self.w_o.T  # (batch, seq_len, d_model)
-        return output
+        # scores = qh @ kh^T
+        dqh = np.matmul(dscores, kh)                         # (B,H,T,hd)
+        dkh = np.matmul(dscores.transpose(0, 1, 3, 2), qh)  # (B,H,T,hd)
+
+        # back to (B,T,H,hd)
+        dq = dqh.transpose(0, 2, 1, 3)
+        dk = dkh.transpose(0, 2, 1, 3)
+        dv = dvh.transpose(0, 2, 1, 3)
+
+        # rope backward (q, k)
+        dq = self.rope_q.backward(dq)
+        dk = self.rope_k.backward(dk)
+
+        # projections: q = xf @ w_q.T
+        dq2 = dq.reshape(-1, H * hd)
+        dk2 = dk.reshape(-1, H * hd)
+        dv2 = dv.reshape(-1, H * hd)
+        self.g["w_q"] = dq2.T @ xf
+        self.g["w_k"] = dk2.T @ xf
+        self.g["w_v"] = dv2.T @ xf
+        dxf = dq2 @ self.w_q + dk2 @ self.w_k + dv2 @ self.w_v
+        return dxf.reshape(B, T, C)

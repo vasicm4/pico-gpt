@@ -1,90 +1,69 @@
-"""
-Rotary Position Embedding (RoPE) implementation using NumPy.
+"""Rotary Position Embedding (RoPE), interleaved convention (NumPy).
 
-If you want GPU acceleration, replace the import with:
-    import cupy as np
-and the rest of the code works unchanged.
+Matches the PyTorch reference exactly:
+    cos/sin use repeat_interleave(2)         -> interleaved layout
+    rotate_half([x0,x1,x2,x3]) = [-x1,x0,-x3,x2]
+RoPE has no learnable parameters; backward just moves gradients through the
+fixed linear rotation.
 """
 import numpy as np
+# import cupy as np
 
 class RoPE:
-    def __init__(self, head_dim: int, max_seq_len: int = 64, theta: float = 10000.0):
-        """
-        Parameters
-        ----------
-        head_dim : int
-            Dimensionality of each attention head (must be even).
-        max_seq_len : int, default 64
-            Maximum sequence length for which positional encodings are pre‑computed.
-        theta : float, default 10000.0
-            Frequency base as in the original Transformer.
-        """
+    def __init__(self, head_dim: int, max_seq_len: int = 64, theta: float = 10000.0,
+                 dtype=np.float32):
         if head_dim % 2 != 0:
             raise ValueError("head_dim must be even for RoPE")
         self.head_dim = head_dim
         self.max_seq_len = max_seq_len
         self.theta = theta
+        self.dtype = dtype
 
-        # Precompute frequency terms
-        inv_freq = 1.0 / (theta ** (np.arange(0, head_dim, 2, dtype=np.float32) / head_dim))
-        self.register_buffer("inv_freq", inv_freq)  # shape (head_dim//2,)
+        inv_freq = 1.0 / (theta ** (np.arange(0, head_dim, 2, dtype=np.float64) / head_dim))
+        t = np.arange(max_seq_len, dtype=np.float64)
+        freqs = np.outer(t, inv_freq)                        # (S, hd/2)
+        self.cos = np.repeat(np.cos(freqs), 2, axis=1).astype(dtype)  # (S, hd) interleaved
+        self.sin = np.repeat(np.sin(freqs), 2, axis=1).astype(dtype)
+        self._seq = None  # cache seq_len used in forward
 
-        # Precompute cos/sin for each position up to max_seq_len
-        t = np.arange(max_seq_len, dtype=np.float32)          # (max_seq_len,)
-        freqs = np.outer(t, inv_freq)                         # (max_seq_len, head_dim//2)
-        self.register_buffer("cos", np.cos(freqs).repeat(2, axis=1))  # (max_seq_len, head_dim)
-        self.register_buffer("sin", np.sin(freqs).repeat(2, axis=1))  # (max_seq_len, head_dim)
+    # no parameters
+    def params(self):
+        return []
 
-    def register_buffer(self, name, tensor):
-        """Simple buffer registry – mimics torch.nn.Module.register_buffer."""
-        setattr(self, name, tensor)
+    def grads(self):
+        return []
 
-    def _rotate_half(self, x):
-        """
-        Rotates the last dimension by splitting into two halves and swapping with sign.
-        Input:  (..., dim) where dim is even.
-        Output: (..., dim)
-        """
-        x1 = x[..., ::2]
-        # Actually split: x[..., 0::2], x[..., 1::2]
-        x1 = x[..., 0::2]
-        x2 = x[..., 1::2]
-        return np.concatenate([-x2, x1], axis=-1)
+    @staticmethod
+    def _rotate_half(x):
+        # [x0,x1,x2,x3,...] -> [-x1,x0,-x3,x2,...]
+        x_even = x[..., 0::2]
+        x_odd = x[..., 1::2]
+        return np.stack((-x_odd, x_even), axis=-1).reshape(x.shape)
+
+    @staticmethod
+    def _rotate_half_T(g):
+        # transpose of _rotate_half: [g0,g1,g2,g3,...] -> [g1,-g0,g3,-g2,...]
+        g_even = g[..., 0::2]
+        g_odd = g[..., 1::2]
+        return np.stack((g_odd, -g_even), axis=-1).reshape(g.shape)
+
+    def _cs(self, seq_len, ndim):
+        cos = self.cos[:seq_len, :]
+        sin = self.sin[:seq_len, :]
+        shape = [1] * (ndim - 2) + [seq_len, self.head_dim]
+        return cos.reshape(shape), sin.reshape(shape)
 
     def forward(self, x):
-        """
-        Apply rotary positional embedding to the last dimension of x.
-
-        Parameters
-        ----------
-        x : np.ndarray
-            Shape (batch, seq_len, num_heads, head_dim) or any shape where the
-            last dimension is head_dim and the second‑to‑last dimension is seq_len.
-
-        Returns
-        -------
-        np.ndarray
-            Same shape as x, with rotary embedding applied.
-        """
+        # x: (..., seq_len, head_dim)
         seq_len = x.shape[-2]
         if seq_len > self.max_seq_len:
-            raise ValueError(
-                f"Sequence length {seq_len} exceeds maximum precomputed length {self.max_seq_len}."
-            )
-        cos = self.cos[:seq_len, :]          # (seq_len, head_dim)
-        sin = self.sin[:seq_len, :]          # (seq_len, head_dim)
+            raise ValueError(f"seq_len {seq_len} exceeds max {self.max_seq_len}")
+        self._seq = seq_len
+        cos, sin = self._cs(seq_len, x.ndim)
+        return x * cos + self._rotate_half(x) * sin
 
-        # Reshape for broadcasting: (1, seq_len, 1, head_dim) if needed
-        # We assume x.shape = (..., seq_len, head_dim)
-        # Add leading dimensions of size 1 for batch/head dims if they exist.
-        # Using numpy's broadcasting, we can just align the last two axes.
-        # Expand dims to match x's leading dimensions.
-        # Determine number of leading dims
-        ndim = x.ndim
-        # cos/sin shape: (seq_len, head_dim)
-        # reshape to (1,)* (ndim-2) + (seq_len, head_dim)
-        shape = [1] * (ndim - 2) + [seq_len, self.head_dim]
-        cos = cos.reshape(shape)
-        sin = sin.reshape(shape)
-
-        return (x * cos) + (self._rotate_half(x) * sin)
+    def backward(self, dy):
+        # y = x*cos + R(x)*sin  ->  dx = dy*cos + R^T(dy*sin)
+        seq_len = self._seq
+        cos, sin = self._cs(seq_len, dy.ndim)
+        return dy * cos + self._rotate_half_T(dy * sin)
