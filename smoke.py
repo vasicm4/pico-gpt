@@ -1,8 +1,4 @@
-"""End-to-end smoke test of the numpy pipeline on the synthetic corpus.
 
-Uses a smaller config than the oracle for CPU speed; the real run just swaps
-these for B=32, T=128, C=256, L=4, NH=8 and points at the TinyStories chunks.
-"""
 from data_handling.tokenizer import CharacterTokenizer
 from data_handling.batch_loader_np import DynamicBatchLoaderNp as DynamicBatchLoader
 from layers.oracle import PicoGPTOracle

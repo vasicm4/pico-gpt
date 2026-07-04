@@ -1,10 +1,4 @@
-"""SwiGLU activation with manual forward/backward (NumPy).
 
-Matches the PyTorch reference: no biases.
-    y = w3( silu(x @ w12.T)[:d_ffn]  *  (x @ w12.T)[d_ffn:] )
-with silu(z) = z * sigmoid(z).
-Weight orientation mirrors torch.nn.Linear (out, in), applied as x @ W.T.
-"""
 import numpy as np
 
 

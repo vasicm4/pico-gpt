@@ -1,11 +1,4 @@
-"""Rotary Position Embedding (RoPE), interleaved convention (NumPy).
 
-Matches the PyTorch reference exactly:
-    cos/sin use repeat_interleave(2)         -> interleaved layout
-    rotate_half([x0,x1,x2,x3]) = [-x1,x0,-x3,x2]
-RoPE has no learnable parameters; backward just moves gradients through the
-fixed linear rotation.
-"""
 import numpy as np
 
 

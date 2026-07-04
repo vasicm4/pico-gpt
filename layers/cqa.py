@@ -1,11 +1,4 @@
-"""Causal grouped-query attention block with manual forward/backward (NumPy).
 
-When n_kv_heads == n_heads this is plain MHA; when n_kv_heads < n_heads it is
-GQA (K/V projections are narrower, and the resulting KV heads are repeated to
-match the Q head count). Matches the PyTorch reference's behavior exactly,
-including the spec-required gradient accumulation along the KV broadcast group.
-No biases. RoPE applied to q and k.
-"""
 import numpy as np
 from .position import RoPE
 

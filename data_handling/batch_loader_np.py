@@ -1,13 +1,4 @@
-"""NumPy-native DynamicBatchLoader.
 
-Identical semantics to the reference torch loader (chunk swapping, random
-offsets, x = data[i:i+T], y = data[i+1:i+T+1]) but returns numpy int64 arrays
-instead of torch tensors.
-
-Pass the tokenizer's `stoi` as `char_to_int` so the encoding is guaranteed
-consistent with the tokenizer used for decode(); if omitted it falls back to
-the reference's hard-coded vocabulary.
-"""
 import os
 import numpy as np
 

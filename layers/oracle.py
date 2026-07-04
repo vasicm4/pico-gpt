@@ -1,4 +1,4 @@
-"""NumPy decoder-only transformer (PicoGPTOracle) with manual backprop."""
+
 import numpy as np
 from .normalization import RMSNorm
 from .activation import SwiGLU
@@ -142,16 +142,7 @@ class PicoGPTOracle:
 
 
     def fuse_norms_for_inference(self):
-        """Precompute fused weights so inference skips the separate
-        `* gamma` step of every RMSNorm and folds it directly into the
-        following linear layer's weight matrix.
 
-        Only the elementwise gamma is foldable -- the x/rms(x) division is
-        data-dependent and still has to run per token. This does not touch
-        the original trained weights (self.w_q etc.), so training / saving
-        / loading are unaffected; it just adds *_fused arrays and a flag.
-        Call once after loading weights, before running forward_inference().
-        """
         for L in self.layers:
             g_attn = L["attn_norm"].weight            # (d_model,)
             attn = L["attn"]
@@ -166,11 +157,7 @@ class PicoGPTOracle:
         self._fused = True
 
     def forward_inference(self, idx):
-        """Same computation as forward(), but skips every RMSNorm's gamma
-        multiply by using the fused weights instead. No targets/loss, no
-        cache kept for backward -- inference only. Call
-        fuse_norms_for_inference() once beforehand.
-        """
+
         if not getattr(self, "_fused", False):
             self.fuse_norms_for_inference()
 

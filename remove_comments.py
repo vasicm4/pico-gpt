@@ -1,14 +1,11 @@
 
-"""
-Remove comments from Python files while preserving docstrings and code.
-Usage: python remove_comments.py <file1.py> [file2.py ...]
-"""
+
 import sys
 import tokenize
 import os
 
 def remove_comments_from_file(filepath):
-    """Remove comments from a single Python file."""
+
     with open(filepath, 'r', encoding='utf-8') as f:
         source = f.read()
 

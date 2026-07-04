@@ -1,9 +1,4 @@
-"""AdamW with decoupled weight decay + global-norm gradient clipping (NumPy).
 
-Mirrors torch.optim.AdamW(lr=1e-3, weight_decay=0.01) with
-torch.nn.utils.clip_grad_norm_(max_norm=1.0): weight decay applies to ALL
-parameters (no param-group exclusions), matching the reference training script.
-"""
 import numpy as np
 
 class AdamW:

@@ -1,4 +1,4 @@
-"""RMS Normalization with manual forward/backward (NumPy)."""
+
 import numpy as np
 
 

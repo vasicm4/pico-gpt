@@ -1,5 +1,4 @@
-"""Training / generation runner, mirroring the reference main.py Runner
-(AdamW lr=1e-3 wd=0.01, grad clip 1.0, periodic eval + sampling)."""
+
 import numpy as np
 from .optimizer import AdamW
 from .cqa import softmax

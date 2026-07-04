@@ -1,11 +1,4 @@
-"""Entry point mirroring the reference oracle/main.py, in pure NumPy.
 
-Training uses the SAME hyperparameters as the reference:
-    B=32, T=128, C=256, L=4, NH=8, lr=1e-3, wd=0.01, clip=1.0,
-    max_steps=2000, eval_interval=200
-and the SAME data pipeline (CharacterTokenizer + DynamicBatchLoader over the
-TinyStories chunks in ./data_handling/data).
-"""
 import numpy as np
 
 from data_handling.tokenizer import CharacterTokenizer

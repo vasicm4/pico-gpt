@@ -1,4 +1,4 @@
-"""Finite-difference gradient checks (float64) for every layer + full model."""
+
 from layers.normalization import RMSNorm
 from layers.activation import SwiGLU
 from layers.position import RoPE
@@ -27,7 +27,7 @@ def passed(a, b):
 
 
 def check_layer(name, layer, x, seed=0):
-    """Scalar loss = sum(y * c) for fixed random c. Check dx and all param grads."""
+
     rng = np.random.RandomState(seed)
     y = layer.forward(x)
     c = rng.randn(*y.shape).astype(F64)
