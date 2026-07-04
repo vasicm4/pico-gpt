@@ -24,7 +24,6 @@ class CausalGQABlock(nn.Module):
         self.register_buffer("mask", torch.tril(torch.ones(max_seq_len, max_seq_len)))
 
     def _repeat_kv(self, x):
-
         if self.n_rep == 1:
             return x
         B, H, T, D = x.shape
