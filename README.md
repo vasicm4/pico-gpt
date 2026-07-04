@@ -1,4 +1,4 @@
-# PicoGPT
+
 
 PicoGPT is a completely transparent, from-scratch implementation of a generative Transformer architecture (nanoGPT) built using pure **NumPy** matrix operations. 
 
@@ -6,7 +6,7 @@ By bypassing heavy deep learning frameworks like PyTorch or TensorFlow for the c
 
 ---
 
-## Project Structure
+
 
 The codebase is modularly divided into distinct domains to separate the training engine, data stream, and verification tools:
 
