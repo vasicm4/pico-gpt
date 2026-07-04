@@ -94,6 +94,8 @@ if __name__ == "__main__":
     C, L, NH = 256, 4, 8
     KV_HEADS = None  # set to an int < NH for GQA; leave None to match the MHA-trained checkpoint
     V = tokenizer.vocab_size
+    loader = DynamicBatchLoader("data_handling/data", B, T,
+                                swap_every_iterations=100)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     if KV_HEADS is not None:
@@ -107,6 +109,9 @@ if __name__ == "__main__":
     model.eval()
 
     runner = Runner(model, batch_loader=None, max_steps=0, eval_interval=0)
+    # runner = Runner(model, batch_loader=loader,
+    #                 max_steps=2000, eval_interval=200)
+    # runner.train()
 
 
     prompt = ""

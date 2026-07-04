@@ -1,6 +1,6 @@
 
-import numpy as np
-
+# import numpy as np
+import cupy as np
 
 class RoPE:
     def __init__(self, head_dim: int, max_seq_len: int = 64, theta: float = 10000.0,

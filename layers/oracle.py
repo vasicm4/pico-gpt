@@ -1,5 +1,7 @@
-
-import numpy as np
+# import numpy as np
+import cupy as np
+import numpy
+import cupyx
 from .normalization import RMSNorm
 from .activation import SwiGLU
 from .cqa import CausalGQABlock, softmax
@@ -43,7 +45,7 @@ class PicoGPTOracle:
             self.layers.append({
                 "attn_norm": RMSNorm(d_model, dtype=dtype),
                 "attn": CausalGQABlock(d_model, n_heads, self.head_dim, max_seq_len,
-                                        n_kv_heads=n_kv_heads, dtype=dtype),
+                                       n_kv_heads=n_kv_heads, dtype=dtype),
                 "mlp_norm": RMSNorm(d_model, dtype=dtype),
                 "mlp": SwiGLU(d_model, d_ffn, dtype=dtype),
             })
@@ -86,19 +88,18 @@ class PicoGPTOracle:
         names.append("lm_head")
         return dict(zip(names, self.params()))
 
-
     def forward(self, idx, targets=None):
         B, T = idx.shape
         if T > self.max_seq_len:
             raise ValueError(f"seq_len {T} exceeds max {self.max_seq_len}")
-        x = self.token_embedding[idx]                     # (B,T,d)
+        x = self.token_embedding[idx]  # (B,T,d)
 
         for L in self.layers:
             x = x + L["attn"].forward(L["attn_norm"].forward(x))
             x = x + L["mlp"].forward(L["mlp_norm"].forward(x))
 
         x = self.final_norm.forward(x)
-        logits = x @ self.lm_head.T                       # (B,T,V)
+        logits = x @ self.lm_head.T  # (B,T,V)
 
         loss = None
         cache = None
@@ -110,43 +111,38 @@ class PicoGPTOracle:
         self._cache = cache
         return logits, loss
 
-
     def backward(self):
         idx, x, probs, tf, B, T = self._cache
         N = probs.shape[0]
         V, d = self.vocab_size, self.d_model
 
-
         dlogits = probs.copy()
         dlogits[np.arange(N), tf] -= 1.0
-        dlogits /= N                                      # (N, V)
+        dlogits /= N  # (N, V)
 
-        xf = x.reshape(-1, d)                             # (N, d)
-        self.g_head = dlogits.T @ xf                      # (V, d)
-        dx = (dlogits @ self.lm_head).reshape(B, T, d)    # (B,T,d)
+        xf = x.reshape(-1, d)  # (N, d)
+        self.g_head = dlogits.T @ xf  # (V, d)
+        dx = (dlogits @ self.lm_head).reshape(B, T, d)  # (B,T,d)
 
         dx = self.final_norm.backward(dx)
 
         for L in reversed(self.layers):
-
             d_branch = L["mlp_norm"].backward(L["mlp"].backward(dx))
             dx = dx + d_branch
 
             d_branch = L["attn_norm"].backward(L["attn"].backward(dx))
             dx = dx + d_branch
 
-
         self.g_emb = np.zeros_like(self.token_embedding)
-        np.add.at(self.g_emb, idx.reshape(-1), dx.reshape(-1, d))
+        cupyx.scatter_add(self.g_emb, idx.reshape(-1), dx.reshape(-1, d))
         return None
-
 
     def fuse_norms_for_inference(self):
 
         for L in self.layers:
-            g_attn = L["attn_norm"].weight            # (d_model,)
+            g_attn = L["attn_norm"].weight  # (d_model,)
             attn = L["attn"]
-            attn.w_q_fused = attn.w_q * g_attn         # broadcasts over the input-dim columns
+            attn.w_q_fused = attn.w_q * g_attn  # broadcasts over the input-dim columns
             attn.w_k_fused = attn.w_k * g_attn
             attn.w_v_fused = attn.w_v * g_attn
 
@@ -169,14 +165,13 @@ class PicoGPTOracle:
         for L in self.layers:
             normed = L["attn_norm"].forward(x, apply_weight=False)
             x = x + L["attn"].forward(normed, w_q=L["attn"].w_q_fused,
-                                       w_k=L["attn"].w_k_fused, w_v=L["attn"].w_v_fused)
+                                      w_k=L["attn"].w_k_fused, w_v=L["attn"].w_v_fused)
             normed = L["mlp_norm"].forward(x, apply_weight=False)
             x = x + L["mlp"].forward(normed, w12=L["mlp"].w12_fused)
 
         normed = self.final_norm.forward(x, apply_weight=False)
         logits = normed @ self.lm_head_fused.T
         return logits
-
 
     def generate(self, start_tokens, max_new_tokens, temperature=1.0, rng=None):
         rng = rng or np.random
@@ -190,12 +185,12 @@ class PicoGPTOracle:
             gen = np.concatenate([gen, nxt], axis=1)
         return gen
 
-
     def save(self, path):
-        np.savez(path, **{k: v for k, v in self.named_params().items()})
+        host_params = {k: np.asnumpy(v) for k, v in self.named_params().items()}
+        numpy.savez(path, **host_params)
 
     def load(self, path):
-        data = np.load(path if path.endswith(".npz") else path + ".npz")
+        data = numpy.load(path if path.endswith(".npz") else path + ".npz")
         current = self.named_params()
         for k, v in current.items():
-            v[...] = data[k]            # in-place so references stay valid
+            v[...] = np.asarray(data[k])  # in-place so references stay valid

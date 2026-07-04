@@ -1,5 +1,6 @@
 
-import numpy as np
+# import numpy as np
+import cupy as np
 from .optimizer import AdamW
 from .cqa import softmax
 
@@ -28,7 +29,7 @@ class Runner:
             logits = logits[:, -1, :] / max(temperature, 1e-5)
             probs = softmax(logits, axis=-1)            # (B, V)
 
-            nxt = np.array([rng.choice(self.model.vocab_size, p=probs[b])
+            nxt = np.array([rng.choice(self.model.vocab_size, size=1, p=probs[b])[0]
                             for b in range(probs.shape[0])], dtype=np.int64)[:, None]
             ctx = np.concatenate([ctx, nxt], axis=1)
         return ctx
@@ -39,7 +40,7 @@ class Runner:
             x, y = self.batch_loader.get_batch(split, self.B, self.T)
             _, loss = self.model.forward(x, y)
             losses.append(loss)
-        return float(np.mean(losses))
+        return float(np.mean(np.asarray(losses)))
 
     def train(self):
         tok, T = self.tokenizer, self.T
