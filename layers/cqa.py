@@ -60,15 +60,22 @@ class CausalGQABlock:
     def grads(self):
         return [self.g[n] for n in self._param_names]
 
-    def forward(self, x):
+    def forward(self, x, w_q=None, w_k=None, w_v=None):
+        # w_q/w_k/w_v let the caller pass pre-fused weights (e.g. the
+        # preceding RMSNorm's gamma folded in) for inference. Defaults to
+        # the module's own trained weights, so training is unaffected.
+        w_q = self.w_q if w_q is None else w_q
+        w_k = self.w_k if w_k is None else w_k
+        w_v = self.w_v if w_v is None else w_v
+
         B, T, C = x.shape
         H, KH, hd = self.n_heads, self.n_kv_heads, self.head_dim
         scale = 1.0 / np.sqrt(hd)
 
         xf = x.reshape(-1, C)                                  # (B*T, C)
-        q = (xf @ self.w_q.T).reshape(B, T, H, hd)
-        k = (xf @ self.w_k.T).reshape(B, T, KH, hd)
-        v = (xf @ self.w_v.T).reshape(B, T, KH, hd)
+        q = (xf @ w_q.T).reshape(B, T, H, hd)
+        k = (xf @ w_k.T).reshape(B, T, KH, hd)
+        v = (xf @ w_v.T).reshape(B, T, KH, hd)
 
         q = self.rope_q.forward(q)                             # (B,T,H,hd)
         k = self.rope_k.forward(k)                             # (B,T,KH,hd)

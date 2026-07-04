@@ -32,11 +32,12 @@ class SwiGLU:
     def grads(self):
         return [self.g[n] for n in self._param_names]
 
-    def forward(self, x):
+    def forward(self, x, w12=None):
+        w12 = self.w12 if w12 is None else w12
         # x: (..., d_model) -> flatten leading dims for the matmuls
         lead = x.shape[:-1]
         xf = x.reshape(-1, self.d_model)                 # (N, d_model)
-        x12 = xf @ self.w12.T                            # (N, 2*d_ffn)
+        x12 = xf @ w12.T                                 # (N, 2*d_ffn)
         gate, value = np.split(x12, 2, axis=-1)          # each (N, d_ffn)
         sig = _sigmoid(gate)
         silu = gate * sig                                # (N, d_ffn)

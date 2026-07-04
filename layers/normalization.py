@@ -21,13 +21,13 @@ class RMSNorm:
     def grads(self):
         return [self.g[n] for n in self._param_names]
 
-    def forward(self, x):
+    def forward(self, x, apply_weight=True):
         # x: (..., D)
         s = np.mean(np.square(x), axis=-1, keepdims=True) + self.epsilon  # (...,1)
         r = np.sqrt(s)                                                    # rms
         n = x / r                                                         # normalized
         self._cache = (x, r, s, n)
-        return n * self.weight
+        return n * self.weight if apply_weight else n
 
     def backward(self, dy):
         x, r, s, n = self._cache

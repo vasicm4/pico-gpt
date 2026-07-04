@@ -143,6 +143,56 @@ class PicoGPTOracle:
         np.add.at(self.g_emb, idx.reshape(-1), dx.reshape(-1, d))
         return None
 
+    # ---------- inference: fuse each RMSNorm's gamma into the next matmul ----------
+    def fuse_norms_for_inference(self):
+        """Precompute fused weights so inference skips the separate
+        `* gamma` step of every RMSNorm and folds it directly into the
+        following linear layer's weight matrix.
+
+        Only the elementwise gamma is foldable -- the x/rms(x) division is
+        data-dependent and still has to run per token. This does not touch
+        the original trained weights (self.w_q etc.), so training / saving
+        / loading are unaffected; it just adds *_fused arrays and a flag.
+        Call once after loading weights, before running forward_inference().
+        """
+        for L in self.layers:
+            g_attn = L["attn_norm"].weight            # (d_model,)
+            attn = L["attn"]
+            attn.w_q_fused = attn.w_q * g_attn         # broadcasts over the input-dim columns
+            attn.w_k_fused = attn.w_k * g_attn
+            attn.w_v_fused = attn.w_v * g_attn
+
+            g_mlp = L["mlp_norm"].weight
+            L["mlp"].w12_fused = L["mlp"].w12 * g_mlp
+
+        self.lm_head_fused = self.lm_head * self.final_norm.weight
+        self._fused = True
+
+    def forward_inference(self, idx):
+        """Same computation as forward(), but skips every RMSNorm's gamma
+        multiply by using the fused weights instead. No targets/loss, no
+        cache kept for backward -- inference only. Call
+        fuse_norms_for_inference() once beforehand.
+        """
+        if not getattr(self, "_fused", False):
+            self.fuse_norms_for_inference()
+
+        B, T = idx.shape
+        if T > self.max_seq_len:
+            raise ValueError(f"seq_len {T} exceeds max {self.max_seq_len}")
+        x = self.token_embedding[idx]
+
+        for L in self.layers:
+            normed = L["attn_norm"].forward(x, apply_weight=False)
+            x = x + L["attn"].forward(normed, w_q=L["attn"].w_q_fused,
+                                       w_k=L["attn"].w_k_fused, w_v=L["attn"].w_v_fused)
+            normed = L["mlp_norm"].forward(x, apply_weight=False)
+            x = x + L["mlp"].forward(normed, w12=L["mlp"].w12_fused)
+
+        normed = self.final_norm.forward(x, apply_weight=False)
+        logits = normed @ self.lm_head_fused.T
+        return logits
+
     # ---------- inference ----------
     def generate(self, start_tokens, max_new_tokens, temperature=1.0, rng=None):
         rng = rng or np.random

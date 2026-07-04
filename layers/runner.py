@@ -20,12 +20,12 @@ class Runner:
 
     # ---- generation (numpy equivalent of the reference generate_text) ----
     def generate_text(self, start_tokens, max_new_tokens, block_size,
-                      temperature=1.0, rng=None):
+                      temperature=1.0, rng=None, inference=False):
         rng = rng or np.random
         ctx = np.array(start_tokens, dtype=np.int64)
         for _ in range(max_new_tokens):
             ctx_cond = ctx[:, -block_size:]
-            logits, _ = self.model.forward(ctx_cond)
+            logits, _ = self.model.forward_inference(ctx_cond) if inference else self.model.forward(ctx_cond)
             logits = logits[:, -1, :] / max(temperature, 1e-5)
             probs = softmax(logits, axis=-1)            # (B, V)
             # per-batch sampling, matching torch.multinomial(probs, num_samples=1)
