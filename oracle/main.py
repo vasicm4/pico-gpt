@@ -28,7 +28,7 @@ class Runner:
 
     def train(self):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        # model = PicoGPTOracle(vocab_size=V, d_model=C, n_layers=L, n_heads=NH, max_seq_len=T)
+
         model = self.model
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
@@ -68,22 +68,22 @@ class Runner:
         torch.save(model.state_dict(), "pico_gpt_oracle.pth")
         print("Model saved successfully as 'pico_gpt_oracle.pth'")
 
-# if __name__ == "__main__":
-#
-#     tokenizer = CharacterTokenizer(" \n\t0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.,?!;:'\"-—…()[]{}*_&$%/\\“”‘’")
-#     B, T = 32, 128
-#     C = 256
-#     L = 4
-#     NH = 8
-#     V = tokenizer.vocab_size
-#     max_steps = 2000
-#     eval_interval = 200
-#
-#     batch_loader = DynamicBatchLoader(batch_size=B, block_size=T, chunk_dir="./data_handling/data")
-#     model = PicoGPTOracle(vocab_size=V, d_model=C, n_layers=L, n_heads=NH, max_seq_len=T)
-#
-#     runner = Runner(model, batch_loader, max_steps, eval_interval)
-#     runner.train()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 if __name__ == "__main__":
     vocab_str = " \n\t0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.,?!;:'\"-—…()[]{}*_&$%/\\Code“”‘’"

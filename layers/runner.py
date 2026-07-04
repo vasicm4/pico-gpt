@@ -3,7 +3,7 @@
 import numpy as np
 from .optimizer import AdamW
 from .cqa import softmax
-# import cupy as np
+
 
 class Runner:
     def __init__(self, model, batch_loader, tokenizer, B, T,
@@ -18,7 +18,7 @@ class Runner:
         self.opt = AdamW(model.params(), model.grads, lr=lr,
                          weight_decay=weight_decay, max_grad_norm=max_grad_norm)
 
-    # ---- generation (numpy equivalent of the reference generate_text) ----
+
     def generate_text(self, start_tokens, max_new_tokens, block_size,
                       temperature=1.0, rng=None, inference=False):
         rng = rng or np.random
@@ -28,7 +28,7 @@ class Runner:
             logits, _ = self.model.forward_inference(ctx_cond) if inference else self.model.forward(ctx_cond)
             logits = logits[:, -1, :] / max(temperature, 1e-5)
             probs = softmax(logits, axis=-1)            # (B, V)
-            # per-batch sampling, matching torch.multinomial(probs, num_samples=1)
+
             nxt = np.array([rng.choice(self.model.vocab_size, p=probs[b])
                             for b in range(probs.shape[0])], dtype=np.int64)[:, None]
             ctx = np.concatenate([ctx, nxt], axis=1)

@@ -1,13 +1,11 @@
 """NumPy decoder-only transformer (PicoGPTOracle) with manual backprop."""
 import numpy as np
-# import cupy as np
 from .normalization import RMSNorm
 from .activation import SwiGLU
 from .cqa import CausalGQABlock, softmax
 
 
 def cross_entropy_fwd(logits_flat, targets_flat):
-    """logits_flat: (N, V); targets_flat: (N,). Returns (loss, probs)."""
     m = np.max(logits_flat, axis=-1, keepdims=True)
     e = np.exp(logits_flat - m)
     probs = e / np.sum(e, axis=-1, keepdims=True)
@@ -56,7 +54,6 @@ class PicoGPTOracle:
         self.g_head = np.zeros_like(self.lm_head)
         self._cache = None
 
-    # ---------- parameter aggregation (STABLE order) ----------
     def _modules_in_order(self):
         mods = []
         for L in self.layers:
@@ -89,7 +86,7 @@ class PicoGPTOracle:
         names.append("lm_head")
         return dict(zip(names, self.params()))
 
-    # ---------- forward ----------
+
     def forward(self, idx, targets=None):
         B, T = idx.shape
         if T > self.max_seq_len:
@@ -113,13 +110,13 @@ class PicoGPTOracle:
         self._cache = cache
         return logits, loss
 
-    # ---------- backward (call after forward with targets) ----------
+
     def backward(self):
         idx, x, probs, tf, B, T = self._cache
         N = probs.shape[0]
         V, d = self.vocab_size, self.d_model
 
-        # cross-entropy grad wrt logits
+
         dlogits = probs.copy()
         dlogits[np.arange(N), tf] -= 1.0
         dlogits /= N                                      # (N, V)
@@ -131,19 +128,19 @@ class PicoGPTOracle:
         dx = self.final_norm.backward(dx)
 
         for L in reversed(self.layers):
-            # x = x + mlp(mlp_norm(x))
+
             d_branch = L["mlp_norm"].backward(L["mlp"].backward(dx))
             dx = dx + d_branch
-            # x = x + attn(attn_norm(x))
+
             d_branch = L["attn_norm"].backward(L["attn"].backward(dx))
             dx = dx + d_branch
 
-        # embedding: scatter-add
+
         self.g_emb = np.zeros_like(self.token_embedding)
         np.add.at(self.g_emb, idx.reshape(-1), dx.reshape(-1, d))
         return None
 
-    # ---------- inference: fuse each RMSNorm's gamma into the next matmul ----------
+
     def fuse_norms_for_inference(self):
         """Precompute fused weights so inference skips the separate
         `* gamma` step of every RMSNorm and folds it directly into the
@@ -193,7 +190,7 @@ class PicoGPTOracle:
         logits = normed @ self.lm_head_fused.T
         return logits
 
-    # ---------- inference ----------
+
     def generate(self, start_tokens, max_new_tokens, temperature=1.0, rng=None):
         rng = rng or np.random
         gen = np.array(start_tokens, dtype=np.int64)
@@ -206,7 +203,7 @@ class PicoGPTOracle:
             gen = np.concatenate([gen, nxt], axis=1)
         return gen
 
-    # ---------- checkpoint ----------
+
     def save(self, path):
         np.savez(path, **{k: v for k, v in self.named_params().items()})
 

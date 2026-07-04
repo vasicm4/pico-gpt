@@ -7,7 +7,7 @@ and the SAME data pipeline (CharacterTokenizer + DynamicBatchLoader over the
 TinyStories chunks in ./data_handling/data).
 """
 import numpy as np
-# import cupy as np
+
 from data_handling.tokenizer import CharacterTokenizer
 from data_handling.batch_loader_np import DynamicBatchLoaderNp as DynamicBatchLoader
 from layers.oracle import PicoGPTOracle

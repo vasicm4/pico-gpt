@@ -18,7 +18,7 @@ ATOL = 1e-7  # a gradient this small in absolute terms is 'zero' for FD purposes
 
 
 def rel_err(a, b):
-    # vector-level relative error, robust to individual near-zero coordinates
+
     return np.max(np.abs(a - b)) / (np.max(np.abs(a)) + np.max(np.abs(b)) + 1e-12)
 
 
@@ -35,12 +35,12 @@ def check_layer(name, layer, x, seed=0):
     def loss_from_y(yv):
         return np.sum(yv * c)
 
-    # analytic
+
     dx = layer.backward(c)
     pgrads = [g.copy() for g in layer.grads()]
     params = layer.params()
 
-    # numeric dx (perturb on copies to avoid in-place/nditer interaction)
+
     dx_num = np.zeros_like(x)
     for i in np.ndindex(x.shape):
         xp = x.copy();
@@ -53,7 +53,7 @@ def check_layer(name, layer, x, seed=0):
     layer.forward(x)  # restore cache to the unperturbed input
     e_dx = rel_err(dx, dx_num)
 
-    # numeric param grads
+
     worst_p = 0.0
     worst_p_ok = True
     for p, ga in zip(params, pgrads):
@@ -77,23 +77,23 @@ def check_layer(name, layer, x, seed=0):
 
 ok = True
 
-# RMSNorm
+
 rms = RMSNorm(8, dtype=F64)
 ok &= check_layer("RMSNorm", rms, np.random.randn(3, 4, 8).astype(F64))
 
-# SwiGLU
+
 swi = SwiGLU(8, 6, dtype=F64)
 ok &= check_layer("SwiGLU", swi, np.random.randn(3, 4, 8).astype(F64))
 
-# RoPE (no params)
+
 rope = RoPE(6, max_seq_len=5, dtype=F64)
 ok &= check_layer("RoPE", rope, np.random.randn(2, 5, 3, 6).astype(F64))
 
-# Attention
+
 cqa = CausalGQABlock(8, 2, 4, max_seq_len=5, dtype=F64)
 ok &= check_layer("CausalAttn", cqa, np.random.randn(2, 5, 8).astype(F64))
 
-# ---- Full model gradient check (loss = cross-entropy) ----
+
 print("\nFull model (cross-entropy loss):")
 model = PicoGPTOracle(vocab_size=11, d_model=8, n_layers=2, n_heads=2,
                       max_seq_len=6, dtype=F64)
@@ -108,10 +108,10 @@ analytic = {k: g.copy() for k, g in zip(model.named_params().keys(), model.grads
 named = model.named_params()
 worst = 0.0
 all_ok = True
-# check a subset of coordinates per param (full check is slow); embedding rows that appear
+
 for k, p in named.items():
     gnum = np.zeros_like(p)
-    # sample up to 40 random coordinates
+
     flat_idx = np.random.choice(p.size, size=min(40, p.size), replace=False)
     pf = p.ravel()
     for fi in flat_idx:

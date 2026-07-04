@@ -5,13 +5,10 @@ torch.nn.utils.clip_grad_norm_(max_norm=1.0): weight decay applies to ALL
 parameters (no param-group exclusions), matching the reference training script.
 """
 import numpy as np
-# import cupy as np
 
 class AdamW:
     def __init__(self, params, grads_fn, lr=1e-3, betas=(0.9, 0.999),
                  eps=1e-8, weight_decay=0.01, max_grad_norm=1.0):
-        # params: list of ndarray references (updated in place)
-        # grads_fn: callable returning list of grad ndarrays in the SAME order
         self.params = params
         self.grads_fn = grads_fn
         self.lr = lr
@@ -40,7 +37,6 @@ class AdamW:
         bc1 = 1.0 - self.b1 ** self.t
         bc2 = 1.0 - self.b2 ** self.t
         for i, (p, g) in enumerate(zip(self.params, grads)):
-            # decoupled weight decay
             if self.wd:
                 p -= self.lr * self.wd * p
             self.m[i] = self.b1 * self.m[i] + (1 - self.b1) * g

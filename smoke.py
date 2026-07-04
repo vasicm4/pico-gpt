@@ -17,7 +17,7 @@ tokenizer = CharacterTokenizer(vocab_str)
 V = tokenizer.vocab_size
 print("vocab_size:", V)
 
-# smaller-than-oracle config for a fast CPU smoke test
+
 B, T = 16, 64
 C, L, NH = 128, 3, 4
 loader = DynamicBatchLoader("./data_handling/data", B, T,
@@ -29,7 +29,7 @@ runner = Runner(model, loader, tokenizer, B, T,
                 max_steps=600, eval_interval=150, lr=1e-3)
 runner.train()
 
-# reload the saved checkpoint into a fresh model and generate
+
 print("\n=== reload checkpoint and generate ===")
 model2 = PicoGPTOracle(vocab_size=V, d_model=C, n_layers=L, n_heads=NH,
                        max_seq_len=T)

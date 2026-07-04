@@ -7,7 +7,7 @@ RoPE has no learnable parameters; backward just moves gradients through the
 fixed linear rotation.
 """
 import numpy as np
-# import cupy as np
+
 
 class RoPE:
     def __init__(self, head_dim: int, max_seq_len: int = 64, theta: float = 10000.0,
@@ -26,7 +26,7 @@ class RoPE:
         self.sin = np.repeat(np.sin(freqs), 2, axis=1).astype(dtype)
         self._seq = None  # cache seq_len used in forward
 
-    # no parameters
+
     def params(self):
         return []
 
@@ -35,14 +35,14 @@ class RoPE:
 
     @staticmethod
     def _rotate_half(x):
-        # [x0,x1,x2,x3,...] -> [-x1,x0,-x3,x2,...]
+
         x_even = x[..., 0::2]
         x_odd = x[..., 1::2]
         return np.stack((-x_odd, x_even), axis=-1).reshape(x.shape)
 
     @staticmethod
     def _rotate_half_T(g):
-        # transpose of _rotate_half: [g0,g1,g2,g3,...] -> [g1,-g0,g3,-g2,...]
+
         g_even = g[..., 0::2]
         g_odd = g[..., 1::2]
         return np.stack((g_odd, -g_even), axis=-1).reshape(g.shape)
@@ -54,7 +54,7 @@ class RoPE:
         return cos.reshape(shape), sin.reshape(shape)
 
     def forward(self, x):
-        # x: (..., seq_len, head_dim)
+
         seq_len = x.shape[-2]
         if seq_len > self.max_seq_len:
             raise ValueError(f"seq_len {seq_len} exceeds max {self.max_seq_len}")
@@ -63,7 +63,7 @@ class RoPE:
         return x * cos + self._rotate_half(x) * sin
 
     def backward(self, dy):
-        # y = x*cos + R(x)*sin  ->  dx = dy*cos + R^T(dy*sin)
+
         seq_len = self._seq
         cos, sin = self._cs(seq_len, dy.ndim)
         return dy * cos + self._rotate_half_T(dy * sin)

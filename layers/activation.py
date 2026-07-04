@@ -6,7 +6,7 @@ with silu(z) = z * sigmoid(z).
 Weight orientation mirrors torch.nn.Linear (out, in), applied as x @ W.T.
 """
 import numpy as np
-# import cupy as np
+
 
 def _sigmoid(z):
     return 1.0 / (1.0 + np.exp(-z))
@@ -34,7 +34,7 @@ class SwiGLU:
 
     def forward(self, x, w12=None):
         w12 = self.w12 if w12 is None else w12
-        # x: (..., d_model) -> flatten leading dims for the matmuls
+
         lead = x.shape[:-1]
         xf = x.reshape(-1, self.d_model)                 # (N, d_model)
         x12 = xf @ w12.T                                 # (N, 2*d_ffn)
@@ -49,14 +49,14 @@ class SwiGLU:
     def backward(self, dout):
         xf, gate, sig, value, act, lead = self._cache
         dof = dout.reshape(-1, self.d_model)             # (N, d_model)
-        # out = act @ w3.T
+
         self.g["w3"] = dof.T @ act                       # (d_model, d_ffn)
         dact = dof @ self.w3                             # (N, d_ffn)
-        # act = silu * value
+
         silu = gate * sig
         dsilu = dact * value
         dvalue = dact * silu
-        # silu = gate * sigmoid(gate) -> dsilu/dgate = sig*(1 + gate*(1-sig))
+
         dgate = dsilu * (sig * (1.0 + gate * (1.0 - sig)))
         dx12 = np.concatenate([dgate, dvalue], axis=-1)  # (N, 2*d_ffn)
         # x12 = xf @ w12.T

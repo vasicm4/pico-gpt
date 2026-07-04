@@ -8,7 +8,7 @@ No biases. RoPE applied to q and k.
 """
 import numpy as np
 from .position import RoPE
-# import cupy as np
+
 
 def softmax(x, axis=-1):
     x = x - np.max(x, axis=axis, keepdims=True)
@@ -38,7 +38,7 @@ class CausalGQABlock:
         def init(a, b):
             return (np.random.randn(a, b) * np.sqrt(2.0 / (a + b))).astype(dtype)
 
-        # stored as (out, in), applied as x @ W.T   (mirrors torch.nn.Linear)
+
         self.w_q = init(qd, d_model)
         self.w_k = init(kvd, d_model)
         self.w_v = init(kvd, d_model)
@@ -61,9 +61,9 @@ class CausalGQABlock:
         return [self.g[n] for n in self._param_names]
 
     def forward(self, x, w_q=None, w_k=None, w_v=None):
-        # w_q/w_k/w_v let the caller pass pre-fused weights (e.g. the
-        # preceding RMSNorm's gamma folded in) for inference. Defaults to
-        # the module's own trained weights, so training is unaffected.
+
+
+
         w_q = self.w_q if w_q is None else w_q
         w_k = self.w_k if w_k is None else w_k
         w_v = self.w_v if w_v is None else w_v
@@ -84,9 +84,9 @@ class CausalGQABlock:
         kh = k.transpose(0, 2, 1, 3)                           # (B,KH,T,hd)
         vh = v.transpose(0, 2, 1, 3)                           # (B,KH,T,hd)
 
-        # GQA: broadcast K/V up to H heads by repeating. expand gives a view
-        # with no copy; reshape materializes. The matching backward sums the
-        # gradient across the n_rep group, per the spec.
+
+
+
         if self.n_rep > 1:
             kh = np.broadcast_to(kh[:, :, None], (B, KH, self.n_rep, T, hd))
             kh = kh.reshape(B, KH * self.n_rep, T, hd)
@@ -117,37 +117,37 @@ class CausalGQABlock:
         dctx_bt = (dof @ self.w_o).reshape(B, T, H, hd)      # (B,T,H,hd)
         dctx = dctx_bt.transpose(0, 2, 1, 3)                 # (B,H,T,hd)
 
-        # ctx = attn @ v
+
         dattn = np.matmul(dctx, vh.transpose(0, 1, 3, 2))    # (B,H,T,T)
         dvh = np.matmul(attn.transpose(0, 1, 3, 2), dctx)    # (B,H,T,hd)
 
-        # softmax backward (row-wise)
+
         s = np.sum(dattn * attn, axis=-1, keepdims=True)
         dscores = attn * (dattn - s)                         # (B,H,T,T)
         dscores = np.where(m, dscores, 0.0)                  # masked entries are constants
         dscores *= scale
 
-        # scores = qh @ kh^T
+
         dqh = np.matmul(dscores, kh)                         # (B,H,T,hd)
         dkh = np.matmul(dscores.transpose(0, 1, 3, 2), qh)  # (B,H,T,hd)
 
-        # back to (B,T,H,hd) and (B,T,KH,hd)
+
         dq = dqh.transpose(0, 2, 1, 3)
         dk = dkh.transpose(0, 2, 1, 3)
         dv = dvh.transpose(0, 2, 1, 3)
 
-        # GQA gradient rule: sum the (H,) head gradient back over the n_rep
-        # group to get a gradient w.r.t. the (KH,) KV heads. The H axis of
-        # (B,T,H,hd) is axis=2, so we reshape it to (KH, n_rep) and sum axis=3.
+
+
+
         if n_rep > 1:
             dk = dk.reshape(B, T, KH, n_rep, hd).sum(axis=3) # (B,T,KH,hd)
             dv = dv.reshape(B, T, KH, n_rep, hd).sum(axis=3)
 
-        # rope backward (q, k)
+
         dq = self.rope_q.backward(dq)
         dk = self.rope_k.backward(dk)
 
-        # projections
+
         dq2 = dq.reshape(-1, H * hd)
         self.g["w_q"] = dq2.T @ xf
         dxf = dq2 @ self.w_q
@@ -159,7 +159,7 @@ class CausalGQABlock:
             self.g["w_v"] = dv2.T @ xf
             dxf = dxf + dk2 @ self.w_k + dv2 @ self.w_v
         else:
-            # KH == H, dk/dv already in (B,T,KH,hd) = (B,T,H,hd)
+
             dk2 = dk.reshape(-1, H * hd)
             dv2 = dv.reshape(-1, H * hd)
             self.g["w_k"] = dk2.T @ xf

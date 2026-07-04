@@ -36,7 +36,7 @@ class DynamicBatchLoader:
             text = f.read()
 
         if self.char_to_int is None:
-            # chars = sorted(list(set(text)))
+
             chars = sorted(list(set(" \n\t0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.,?!;:'\"-—…()[]{}*_&$%/\\“”‘’")))
             self.char_to_int = {ch: i for i, ch in enumerate(chars)}
 
