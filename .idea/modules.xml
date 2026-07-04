@@ -3,7 +3,6 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/pico-gpt.iml" filepath="$PROJECT_DIR$/.idea/pico-gpt.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/pico-gpt@1.iml" filepath="$PROJECT_DIR$/.idea/pico-gpt@1.iml" />
     </modules>
   </component>
 </project>
