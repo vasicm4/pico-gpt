@@ -175,7 +175,7 @@ class PicoGPTOracle:
 
         normed = self.final_norm.forward(x, apply_weight=False)
         logits = normed @ self.lm_head_fused.T
-        return logits
+        return logits, 0
 
 
     def generate(self, start_tokens, max_new_tokens, temperature=1.0, rng=None):

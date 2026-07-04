@@ -150,8 +150,7 @@ class Runner:
         print("Saved as 'pico_gpt_oracle_np.npz'")
         return history
 
-    @staticmethod
-    def plot_evaluation(history, vocab_size, save_path="training_eval_dashboard.png", show=True):
+    def plot_evaluation(self, history, vocab_size, save_path="training_eval_dashboard.png", show=True):
         import matplotlib.pyplot as plt
 
         steps = history["step"]
@@ -214,8 +213,7 @@ class Runner:
         plt.close(fig)
         print(f"Saved dashboard to {save_path}")
 
-    @staticmethod
-    def print_summary(history):
+    def print_summary(self, history):
         best_idx = int(np.argmin(history["val_loss"]))
         final_idx = -1
         print("\nFinal Results:")
