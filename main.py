@@ -25,7 +25,9 @@ def train():
     model = build(tokenizer, T, C, L, NH)
     runner = Runner(model, loader, tokenizer, B, T,
                     max_steps=2000, eval_interval=200)
-    runner.train()
+    history = runner.train()
+    runner.plot_evaluation(history, vocab_size=tokenizer.vocab_size)
+    runner.print_summary(history)
 
 
 def infer(checkpoint="pico_gpt_oracle_np", temperature=0.65, max_new_tokens=250):
