@@ -92,13 +92,17 @@ if __name__ == "__main__":
     B = 32
     T = 128
     C, L, NH = 256, 4, 8
+    KV_HEADS = None  # set to an int < NH for GQA; leave None to match the MHA-trained checkpoint
     V = tokenizer.vocab_size
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    model = PicoGPTOracle(vocab_size=V, d_model=C, n_layers=L, n_heads=NH, max_seq_len=T)
+    if KV_HEADS is not None:
+        model = PicoGPTOracle(vocab_size=V, d_model=C, n_layers=L, n_kv_heads=KV_HEADS, n_heads=NH, max_seq_len=T)
+    else:
+        model = PicoGPTOracle(vocab_size=V, d_model=C, n_layers=L, n_heads=NH, max_seq_len=T)
 
     print("Loading pre-trained weights from 'pico_gpt_oracle.pth'...")
-    model.load_state_dict(torch.load("pico_gpt_oracle.pth", map_location=device))
+    model.load_state_dict(torch.load("pico_gpt_oracle.pth", map_location=device), strict=False)
     model.to(device)
     model.eval()
 

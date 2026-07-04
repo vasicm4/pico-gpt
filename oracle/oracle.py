@@ -5,7 +5,7 @@ from activation import SwiGLU
 from cqa import CausalGQABlock
 
 class PicoGPTOracle(nn.Module):
-    def __init__(self, vocab_size=65, d_model=128, n_layers=3, n_heads=4, max_seq_len=64):
+    def __init__(self, vocab_size=65, d_model=128, n_layers=3, n_kv_heads=2, n_heads=4, max_seq_len=64):
         super().__init__()
         self.token_embedding = nn.Embedding(vocab_size, d_model)
         self.head_dim = d_model // n_heads
@@ -14,7 +14,7 @@ class PicoGPTOracle(nn.Module):
         for _ in range(n_layers):
             self.layers.append(nn.ModuleDict({
                 "attn_norm": RMSNorm(d_model),
-                "attn": CausalGQABlock(d_model, n_heads, self.head_dim, max_seq_len),
+                "attn": CausalGQABlock(d_model, n_heads, n_kv_heads, self.head_dim, max_seq_len),
                 "mlp_norm": RMSNorm(d_model),
                 "mlp": SwiGLU(d_model, d_ffn=int(2 * d_model / 3))  # standard SwiGLU scaling
             }))
