@@ -1,6 +1,6 @@
 
-import numpy as np
-
+# import numpy as np
+import cupy as np
 class AdamW:
     def __init__(self, params, grads_fn, lr=1e-3, betas=(0.9, 0.999),
                  eps=1e-8, weight_decay=0.01, max_grad_norm=1.0):

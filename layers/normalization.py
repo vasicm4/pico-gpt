@@ -1,6 +1,6 @@
 
-import numpy as np
-
+# import numpy as np
+import cupy as np
 
 class RMSNorm:
     def __init__(self, dimensions: int, epsilon: float = 1e-6, dtype=np.float32):
