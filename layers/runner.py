@@ -2,7 +2,7 @@
 (AdamW lr=1e-3 wd=0.01, grad clip 1.0, periodic eval + sampling)."""
 import numpy as np
 from .optimizer import AdamW
-from layers.cqa import softmax
+from .cqa import softmax
 # import cupy as np
 
 class Runner:
@@ -27,9 +27,10 @@ class Runner:
             ctx_cond = ctx[:, -block_size:]
             logits, _ = self.model.forward(ctx_cond)
             logits = logits[:, -1, :] / max(temperature, 1e-5)
-            probs = softmax(logits, axis=-1)
-            nxt = np.array([[rng.choice(self.model.vocab_size, p=probs[0])]],
-                           dtype=np.int64)
+            probs = softmax(logits, axis=-1)            # (B, V)
+            # per-batch sampling, matching torch.multinomial(probs, num_samples=1)
+            nxt = np.array([rng.choice(self.model.vocab_size, p=probs[b])
+                            for b in range(probs.shape[0])], dtype=np.int64)[:, None]
             ctx = np.concatenate([ctx, nxt], axis=1)
         return ctx
 

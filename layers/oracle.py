@@ -19,13 +19,18 @@ def cross_entropy_fwd(logits_flat, targets_flat):
 
 class PicoGPTOracle:
     def __init__(self, vocab_size=65, d_model=128, n_layers=3, n_heads=4,
-                 max_seq_len=64, dtype=np.float32):
+                 max_seq_len=64, n_kv_heads=None, dtype=np.float32):
         if d_model % n_heads != 0:
             raise ValueError("d_model must be divisible by n_heads")
+        if n_kv_heads is None:
+            n_kv_heads = n_heads
+        if n_heads % n_kv_heads != 0:
+            raise ValueError(f"n_heads ({n_heads}) must be divisible by n_kv_heads ({n_kv_heads})")
         self.vocab_size = vocab_size
         self.d_model = d_model
         self.n_layers = n_layers
         self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
         self.head_dim = d_model // n_heads
         self.max_seq_len = max_seq_len
         self.dtype = dtype
@@ -39,7 +44,8 @@ class PicoGPTOracle:
         for _ in range(n_layers):
             self.layers.append({
                 "attn_norm": RMSNorm(d_model, dtype=dtype),
-                "attn": CausalGQABlock(d_model, n_heads, self.head_dim, max_seq_len, dtype=dtype),
+                "attn": CausalGQABlock(d_model, n_heads, self.head_dim, max_seq_len,
+                                        n_kv_heads=n_kv_heads, dtype=dtype),
                 "mlp_norm": RMSNorm(d_model, dtype=dtype),
                 "mlp": SwiGLU(d_model, d_ffn, dtype=dtype),
             })

@@ -1,7 +1,10 @@
-"""Causal (multi-head) attention block with manual forward/backward (NumPy).
+"""Causal grouped-query attention block with manual forward/backward (NumPy).
 
-Despite the 'GQA' name this is plain MHA (kv heads == q heads), matching the
-reference. No biases. RoPE applied to q and k.
+When n_kv_heads == n_heads this is plain MHA; when n_kv_heads < n_heads it is
+GQA (K/V projections are narrower, and the resulting KV heads are repeated to
+match the Q head count). Matches the PyTorch reference's behavior exactly,
+including the spec-required gradient accumulation along the KV broadcast group.
+No biases. RoPE applied to q and k.
 """
 import numpy as np
 from .position import RoPE
@@ -15,24 +18,31 @@ def softmax(x, axis=-1):
 
 class CausalGQABlock:
     def __init__(self, d_model: int, n_heads: int, head_dim: int, max_seq_len: int,
-                 dtype=np.float32):
+                 n_kv_heads: int = None, dtype=np.float32):
         if head_dim % 2 != 0:
             raise ValueError("head_dim must be even for RoPE")
+        if n_kv_heads is None:
+            n_kv_heads = n_heads
+        if n_heads % n_kv_heads != 0:
+            raise ValueError(f"n_heads ({n_heads}) must be divisible by n_kv_heads ({n_kv_heads})")
         self.d_model = d_model
         self.n_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.n_rep = n_heads // n_kv_heads  # Q heads sharing one KV head
         self.head_dim = head_dim
         self.max_seq_len = max_seq_len
         self.dtype = dtype
-        hd = n_heads * head_dim
+        qd = n_heads * head_dim
+        kvd = n_kv_heads * head_dim
 
         def init(a, b):
             return (np.random.randn(a, b) * np.sqrt(2.0 / (a + b))).astype(dtype)
 
         # stored as (out, in), applied as x @ W.T   (mirrors torch.nn.Linear)
-        self.w_q = init(hd, d_model)
-        self.w_k = init(hd, d_model)
-        self.w_v = init(hd, d_model)
-        self.w_o = init(d_model, hd)
+        self.w_q = init(qd, d_model)
+        self.w_k = init(kvd, d_model)
+        self.w_v = init(kvd, d_model)
+        self.w_o = init(d_model, qd)
 
         self.rope_q = RoPE(head_dim, max_seq_len, dtype=dtype)
         self.rope_k = RoPE(head_dim, max_seq_len, dtype=dtype)
@@ -52,20 +62,29 @@ class CausalGQABlock:
 
     def forward(self, x):
         B, T, C = x.shape
-        H, hd = self.n_heads, self.head_dim
+        H, KH, hd = self.n_heads, self.n_kv_heads, self.head_dim
         scale = 1.0 / np.sqrt(hd)
 
         xf = x.reshape(-1, C)                                  # (B*T, C)
         q = (xf @ self.w_q.T).reshape(B, T, H, hd)
-        k = (xf @ self.w_k.T).reshape(B, T, H, hd)
-        v = (xf @ self.w_v.T).reshape(B, T, H, hd)
+        k = (xf @ self.w_k.T).reshape(B, T, KH, hd)
+        v = (xf @ self.w_v.T).reshape(B, T, KH, hd)
 
         q = self.rope_q.forward(q)                             # (B,T,H,hd)
-        k = self.rope_k.forward(k)
+        k = self.rope_k.forward(k)                             # (B,T,KH,hd)
 
         qh = q.transpose(0, 2, 1, 3)                           # (B,H,T,hd)
-        kh = k.transpose(0, 2, 1, 3)
-        vh = v.transpose(0, 2, 1, 3)
+        kh = k.transpose(0, 2, 1, 3)                           # (B,KH,T,hd)
+        vh = v.transpose(0, 2, 1, 3)                           # (B,KH,T,hd)
+
+        # GQA: broadcast K/V up to H heads by repeating. expand gives a view
+        # with no copy; reshape materializes. The matching backward sums the
+        # gradient across the n_rep group, per the spec.
+        if self.n_rep > 1:
+            kh = np.broadcast_to(kh[:, :, None], (B, KH, self.n_rep, T, hd))
+            kh = kh.reshape(B, KH * self.n_rep, T, hd)
+            vh = np.broadcast_to(vh[:, :, None], (B, KH, self.n_rep, T, hd))
+            vh = vh.reshape(B, KH * self.n_rep, T, hd)
 
         scores = np.matmul(qh, kh.transpose(0, 1, 3, 2)) * scale   # (B,H,T,T)
         m = self.mask[:T, :T][None, None]                     # (1,1,T,T) bool
@@ -83,6 +102,7 @@ class CausalGQABlock:
     def backward(self, dout):
         (xf, qh, kh, vh, attn, ctx_bt, m, scale,
          B, T, C, H, hd) = self._cache
+        KH, n_rep = self.n_kv_heads, self.n_rep
 
         dof = dout.reshape(-1, C)                             # (B*T, C)
         ctx_flat = ctx_bt.reshape(-1, H * hd)
@@ -104,21 +124,38 @@ class CausalGQABlock:
         dqh = np.matmul(dscores, kh)                         # (B,H,T,hd)
         dkh = np.matmul(dscores.transpose(0, 1, 3, 2), qh)  # (B,H,T,hd)
 
-        # back to (B,T,H,hd)
+        # back to (B,T,H,hd) and (B,T,KH,hd)
         dq = dqh.transpose(0, 2, 1, 3)
         dk = dkh.transpose(0, 2, 1, 3)
         dv = dvh.transpose(0, 2, 1, 3)
+
+        # GQA gradient rule: sum the (H,) head gradient back over the n_rep
+        # group to get a gradient w.r.t. the (KH,) KV heads. The H axis of
+        # (B,T,H,hd) is axis=2, so we reshape it to (KH, n_rep) and sum axis=3.
+        if n_rep > 1:
+            dk = dk.reshape(B, T, KH, n_rep, hd).sum(axis=3) # (B,T,KH,hd)
+            dv = dv.reshape(B, T, KH, n_rep, hd).sum(axis=3)
 
         # rope backward (q, k)
         dq = self.rope_q.backward(dq)
         dk = self.rope_k.backward(dk)
 
-        # projections: q = xf @ w_q.T
+        # projections
         dq2 = dq.reshape(-1, H * hd)
-        dk2 = dk.reshape(-1, H * hd)
-        dv2 = dv.reshape(-1, H * hd)
         self.g["w_q"] = dq2.T @ xf
-        self.g["w_k"] = dk2.T @ xf
-        self.g["w_v"] = dv2.T @ xf
-        dxf = dq2 @ self.w_q + dk2 @ self.w_k + dv2 @ self.w_v
+        dxf = dq2 @ self.w_q
+
+        if n_rep > 1:
+            dk2 = dk.reshape(-1, KH * hd)
+            dv2 = dv.reshape(-1, KH * hd)
+            self.g["w_k"] = dk2.T @ xf
+            self.g["w_v"] = dv2.T @ xf
+            dxf = dxf + dk2 @ self.w_k + dv2 @ self.w_v
+        else:
+            # KH == H, dk/dv already in (B,T,KH,hd) = (B,T,H,hd)
+            dk2 = dk.reshape(-1, H * hd)
+            dv2 = dv.reshape(-1, H * hd)
+            self.g["w_k"] = dk2.T @ xf
+            self.g["w_v"] = dv2.T @ xf
+            dxf = dxf + dk2 @ self.w_k + dv2 @ self.w_v
         return dxf.reshape(B, T, C)
