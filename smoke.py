@@ -3,7 +3,7 @@ from data_handling.tokenizer import CharacterTokenizer
 from data_handling.batch_loader_np import DynamicBatchLoaderNp as DynamicBatchLoader
 from layers.oracle import PicoGPTOracle
 from layers.runner import Runner
-import numpy as np
+import cupy as np
 
 np.random.seed(0)
 
@@ -16,13 +16,17 @@ print("vocab_size:", V)
 
 B, T = 16, 64
 C, L, NH = 128, 3, 4
+#
+# B = 32
+# T = 128
+# C, L, NH = 256, 4, 8
 loader = DynamicBatchLoader("./data_handling/data", B, T,
                             swap_every_iterations=100,
                             char_to_int=tokenizer.stoi, verbose=False)
 model = PicoGPTOracle(vocab_size=V, d_model=C, n_layers=L, n_heads=NH,
                       max_seq_len=T)
 runner = Runner(model, loader, tokenizer, B, T,
-                max_steps=600, eval_interval=150, lr=1e-3)
+                max_steps=3000, eval_interval=150, lr=1e-3)
 runner.train()
 
 

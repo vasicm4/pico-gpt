@@ -51,8 +51,9 @@ def infer(checkpoint="pico_gpt_oracle_np", temperature=0.65, max_new_tokens=250)
 
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "infer":
-        infer()
-    else:
-        train()
+    # import sys
+    # if len(sys.argv) > 1 and sys.argv[1] == "infer":
+    #     infer()
+    # else:
+    #     train()
+    infer()

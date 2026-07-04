@@ -1,19 +1,20 @@
 
 import os
 import numpy as np
-
+import cupy as cp
 _DEFAULT_VOCAB = (" \n\t0123456789abcdefghijklmnopqrstuvwxyz"
                   "ABCDEFGHIJKLMNOPQRSTUVWXYZ.,?!;:'\"-—…()[]{}*_&$%/\\“”‘’")
 
 
 class DynamicBatchLoaderNp:
     def __init__(self, chunk_dir, batch_size, block_size,
-                 swap_every_iterations=100, char_to_int=None, verbose=True):
+                 swap_every_iterations=100, char_to_int=None, verbose=True, gpu=False):
         self.chunk_dir = chunk_dir
         self.batch_size = batch_size
         self.block_size = block_size
         self.swap_every = swap_every_iterations
         self.verbose = verbose
+        self.gpu = gpu
 
         all_files = os.listdir(chunk_dir)
         self.chunk_files = {
@@ -61,4 +62,8 @@ class DynamicBatchLoaderNp:
         ix = np.random.randint(0, len(data) - block_size, batch_size)
         x = np.stack([data[i:i + block_size] for i in ix])
         y = np.stack([data[i + 1:i + block_size + 1] for i in ix])
-        return x.astype(np.int64), y.astype(np.int64)
+        x = x.astype(np.int64)
+        y = y.astype(np.int64)
+        if self.gpu:
+            return cp.asarray(x), cp.asarray(y)
+        return x, y
