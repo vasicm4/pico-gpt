@@ -16,7 +16,7 @@ class PicoGPTOracle(nn.Module):
                 "attn_norm": RMSNorm(d_model),
                 "attn": CausalGQABlock(d_model, n_heads, n_kv_heads, self.head_dim, max_seq_len),
                 "mlp_norm": RMSNorm(d_model),
-                "mlp": SwiGLU(d_model, d_ffn=int(2 * d_model / 3))  # standard SwiGLU scaling
+                "mlp": SwiGLU(d_model, d_ffn=int(2 * d_model / 3))
             }))
 
         self.final_norm = RMSNorm(d_model)

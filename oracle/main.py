@@ -68,23 +68,6 @@ class Runner:
         torch.save(model.state_dict(), "pico_gpt_oracle.pth")
         print("Model saved successfully as 'pico_gpt_oracle.pth'")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 if __name__ == "__main__":
     vocab_str = " \n\t0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.,?!;:'\"-—…()[]{}*_&$%/\\Code“”‘’"
     tokenizer = CharacterTokenizer(vocab_str)
