@@ -1,0 +1,13 @@
+# pico-gpt qualitative samples
+# generated 2026-07-04T16:33:20
+# temperatures: 0.7, 1.0  |  prompt: 'O'  |  max_new_tokens: 40
+
+[step    0]  T=0.7  H=3.549  | OH6CCg—)*”c’’H3_\&cky:I,9y-…0-G?{r&&ZQlfQ
+[step    0]  T=1.0  H=4.087  | O.P{)'y…lJ/!4Kcf-IyZ&&PSw(z[Z& R!_L.XX"8j
+
+[step    5]  T=0.7  H=3.646  | OogGEkO%j%1A85V9j}:L!S(,"Sk&P	nihc;G(LpL&
+[step    5]  T=1.0  H=4.125  | O 'gQT	6!}‘:j/"NkvnNAn’[Z16EiM0wDuB_GBE8p
+
+[step   10]  T=0.7  H=3.607  | O6P$“3a_b196ZS…KrZ&'eK(byK56KZ&1%lP bjORZ
+[step   10]  T=1.0  H=4.126  | OR	gl?2E:.	SOQ[P-k&o2}4 o0{H]KR)VoL0}Pbw1
+
