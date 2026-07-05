@@ -52,10 +52,10 @@ class Runner:
         correct1, correct5, total = 0, 0, 0
         for _ in range(n):
             x, y = self.batch_loader.get_batch(split, self.B, self.T)
-            logits, _ = self.model.forward(x, y)        # (B, T, V)
+            logits, _ = self.model.forward(x, y)
             B, T, _ = logits.shape
-            pred = logits[:, :-1, :]                     # (B, T-1, V)
-            tgt  = y[:, :-1]                             # (B, T-1)
+            pred = logits[:, :-1, :]
+            tgt  = y[:, :-1]
             top5 = np.argpartition(-pred, 5, axis=-1)[..., :5]
             correct1 += int(np.sum(np.any(top5[..., :1] == tgt[..., None], axis=-1)))
             correct5 += int(np.sum(np.any(top5 == tgt[..., None], axis=-1)))
@@ -110,7 +110,7 @@ class Runner:
                 train_loss = self._eval_loss('train')
                 val_loss   = self._eval_loss('val')
                 top1, top5 = self._eval_token_accuracy('val')
-                val_ppl    = math.exp(min(val_loss, 50.0))   # clip — exp(large CE) blows up
+                val_ppl    = math.exp(min(val_loss, 50.0))
                 gap        = val_loss - train_loss
 
                 history["step"].append(step)

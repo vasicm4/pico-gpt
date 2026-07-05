@@ -54,9 +54,6 @@ class CausalGQABlock:
         return [self.g[n] for n in self._param_names]
 
     def forward(self, x, w_q=None, w_k=None, w_v=None):
-
-
-
         w_q = self.w_q if w_q is None else w_q
         w_k = self.w_k if w_k is None else w_k
         w_v = self.w_v if w_v is None else w_v
@@ -65,20 +62,17 @@ class CausalGQABlock:
         H, KH, hd = self.n_heads, self.n_kv_heads, self.head_dim
         scale = 1.0 / np.sqrt(hd)
 
-        xf = x.reshape(-1, C)                                  # (B*T, C)
+        xf = x.reshape(-1, C)
         q = (xf @ w_q.T).reshape(B, T, H, hd)
         k = (xf @ w_k.T).reshape(B, T, KH, hd)
         v = (xf @ w_v.T).reshape(B, T, KH, hd)
 
-        q = self.rope_q.forward(q)                             # (B,T,H,hd)
-        k = self.rope_k.forward(k)                             # (B,T,KH,hd)
+        q = self.rope_q.forward(q)
+        k = self.rope_k.forward(k)
 
-        qh = q.transpose(0, 2, 1, 3)                           # (B,H,T,hd)
-        kh = k.transpose(0, 2, 1, 3)                           # (B,KH,T,hd)
-        vh = v.transpose(0, 2, 1, 3)                           # (B,KH,T,hd)
-
-
-
+        qh = q.transpose(0, 2, 1, 3)
+        kh = k.transpose(0, 2, 1, 3)
+        vh = v.transpose(0, 2, 1, 3)
 
         if self.n_rep > 1:
             kh = np.broadcast_to(kh[:, :, None], (B, KH, self.n_rep, T, hd))
@@ -86,14 +80,14 @@ class CausalGQABlock:
             vh = np.broadcast_to(vh[:, :, None], (B, KH, self.n_rep, T, hd))
             vh = vh.reshape(B, KH * self.n_rep, T, hd)
 
-        scores = np.matmul(qh, kh.transpose(0, 1, 3, 2)) * scale   # (B,H,T,T)
-        m = self.mask[:T, :T][None, None]                     # (1,1,T,T) bool
+        scores = np.matmul(qh, kh.transpose(0, 1, 3, 2)) * scale
+        m = self.mask[:T, :T][None, None]
         scores = np.where(m, scores, -1e9)
-        attn = softmax(scores, axis=-1)                       # (B,H,T,T)
+        attn = softmax(scores, axis=-1)
 
-        ctx = np.matmul(attn, vh)                             # (B,H,T,hd)
+        ctx = np.matmul(attn, vh)
         ctx_bt = ctx.transpose(0, 2, 1, 3).reshape(B, T, H * hd)
-        out = ctx_bt.reshape(-1, H * hd) @ self.w_o.T         # (B*T, C)
+        out = ctx_bt.reshape(-1, H * hd) @ self.w_o.T
         out = out.reshape(B, T, C)
 
         self._cache = (xf, qh, kh, vh, attn, ctx_bt, m, scale, B, T, C, H, hd)
@@ -104,42 +98,32 @@ class CausalGQABlock:
          B, T, C, H, hd) = self._cache
         KH, n_rep = self.n_kv_heads, self.n_rep
 
-        dof = dout.reshape(-1, C)                             # (B*T, C)
+        dof = dout.reshape(-1, C)
         ctx_flat = ctx_bt.reshape(-1, H * hd)
-        self.g["w_o"] = dof.T @ ctx_flat                     # (C, H*hd)
-        dctx_bt = (dof @ self.w_o).reshape(B, T, H, hd)      # (B,T,H,hd)
-        dctx = dctx_bt.transpose(0, 2, 1, 3)                 # (B,H,T,hd)
+        self.g["w_o"] = dof.T @ ctx_flat
+        dctx_bt = (dof @ self.w_o).reshape(B, T, H, hd)
+        dctx = dctx_bt.transpose(0, 2, 1, 3)
 
-
-        dattn = np.matmul(dctx, vh.transpose(0, 1, 3, 2))    # (B,H,T,T)
-        dvh = np.matmul(attn.transpose(0, 1, 3, 2), dctx)    # (B,H,T,hd)
-
+        dattn = np.matmul(dctx, vh.transpose(0, 1, 3, 2))
+        dvh = np.matmul(attn.transpose(0, 1, 3, 2), dctx)
 
         s = np.sum(dattn * attn, axis=-1, keepdims=True)
-        dscores = attn * (dattn - s)                         # (B,H,T,T)
-        dscores = np.where(m, dscores, 0.0)                  # masked entries are constants
+        dscores = attn * (dattn - s)
+        dscores = np.where(m, dscores, 0.0)
         dscores *= scale
-
-
-        dqh = np.matmul(dscores, kh)                         # (B,H,T,hd)
-        dkh = np.matmul(dscores.transpose(0, 1, 3, 2), qh)  # (B,H,T,hd)
-
+        dqh = np.matmul(dscores, kh)
+        dkh = np.matmul(dscores.transpose(0, 1, 3, 2), qh)
 
         dq = dqh.transpose(0, 2, 1, 3)
         dk = dkh.transpose(0, 2, 1, 3)
         dv = dvh.transpose(0, 2, 1, 3)
 
-
-
-
         if n_rep > 1:
-            dk = dk.reshape(B, T, KH, n_rep, hd).sum(axis=3) # (B,T,KH,hd)
+            dk = dk.reshape(B, T, KH, n_rep, hd).sum(axis=3)
             dv = dv.reshape(B, T, KH, n_rep, hd).sum(axis=3)
-
 
         dq = self.rope_q.backward(dq)
         dk = self.rope_k.backward(dk)
-
 
         dq2 = dq.reshape(-1, H * hd)
         self.g["w_q"] = dq2.T @ xf
@@ -152,7 +136,6 @@ class CausalGQABlock:
             self.g["w_v"] = dv2.T @ xf
             dxf = dxf + dk2 @ self.w_k + dv2 @ self.w_v
         else:
-
             dk2 = dk.reshape(-1, H * hd)
             dv2 = dv.reshape(-1, H * hd)
             self.g["w_k"] = dk2.T @ xf

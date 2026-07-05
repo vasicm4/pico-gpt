@@ -142,7 +142,7 @@ class PicoGPTOracle:
         for L in self.layers:
             g_attn = L["attn_norm"].weight  # (d_model,)
             attn = L["attn"]
-            attn.w_q_fused = attn.w_q * g_attn  # broadcasts over the input-dim columns
+            attn.w_q_fused = attn.w_q * g_attn
             attn.w_k_fused = attn.w_k * g_attn
             attn.w_v_fused = attn.w_v * g_attn
 
@@ -193,4 +193,4 @@ class PicoGPTOracle:
         data = numpy.load(path if path.endswith(".npz") else path + ".npz")
         current = self.named_params()
         for k, v in current.items():
-            v[...] = np.asarray(data[k])  # in-place so references stay valid
+            v[...] = np.asarray(data[k])

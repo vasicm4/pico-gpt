@@ -14,8 +14,8 @@ class RoPE:
 
         inv_freq = 1.0 / (theta ** (np.arange(0, head_dim, 2, dtype=np.float64) / head_dim))
         t = np.arange(max_seq_len, dtype=np.float64)
-        freqs = np.outer(t, inv_freq)                        # (S, hd/2)
-        self.cos = np.repeat(np.cos(freqs), 2, axis=1).astype(dtype)  # (S, hd) interleaved
+        freqs = np.outer(t, inv_freq)
+        self.cos = np.repeat(np.cos(freqs), 2, axis=1).astype(dtype)
         self.sin = np.repeat(np.sin(freqs), 2, axis=1).astype(dtype)
         self._seq = None  # cache seq_len used in forward
 

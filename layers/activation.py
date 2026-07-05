@@ -30,30 +30,29 @@ class SwiGLU:
         w12 = self.w12 if w12 is None else w12
 
         lead = x.shape[:-1]
-        xf = x.reshape(-1, self.d_model)                 # (N, d_model)
-        x12 = xf @ w12.T                                 # (N, 2*d_ffn)
-        gate, value = np.split(x12, 2, axis=-1)          # each (N, d_ffn)
+        xf = x.reshape(-1, self.d_model)
+        x12 = xf @ w12.T
+        gate, value = np.split(x12, 2, axis=-1)
         sig = _sigmoid(gate)
-        silu = gate * sig                                # (N, d_ffn)
-        act = silu * value                               # (N, d_ffn)
-        out = act @ self.w3.T                            # (N, d_model)
+        silu = gate * sig
+        act = silu * value
+        out = act @ self.w3.T
         self._cache = (xf, gate, sig, value, act, lead)
         return out.reshape(*lead, self.d_model)
 
     def backward(self, dout):
         xf, gate, sig, value, act, lead = self._cache
-        dof = dout.reshape(-1, self.d_model)             # (N, d_model)
+        dof = dout.reshape(-1, self.d_model)
 
-        self.g["w3"] = dof.T @ act                       # (d_model, d_ffn)
-        dact = dof @ self.w3                             # (N, d_ffn)
+        self.g["w3"] = dof.T @ act
+        dact = dof @ self.w3
 
         silu = gate * sig
         dsilu = dact * value
         dvalue = dact * silu
 
         dgate = dsilu * (sig * (1.0 + gate * (1.0 - sig)))
-        dx12 = np.concatenate([dgate, dvalue], axis=-1)  # (N, 2*d_ffn)
-        # x12 = xf @ w12.T
-        self.g["w12"] = dx12.T @ xf                      # (2*d_ffn, d_model)
-        dxf = dx12 @ self.w12                            # (N, d_model)
+        dx12 = np.concatenate([dgate, dvalue], axis=-1)
+        self.g["w12"] = dx12.T @ xf
+        dxf = dx12 @ self.w12
         return dxf.reshape(*lead, self.d_model)

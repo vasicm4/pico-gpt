@@ -23,9 +23,9 @@ class RMSNorm:
 
     def forward(self, x, apply_weight=True):
 
-        s = np.mean(np.square(x), axis=-1, keepdims=True) + self.epsilon  # (...,1)
-        r = np.sqrt(s)                                                    # rms
-        n = x / r                                                         # normalized
+        s = np.mean(np.square(x), axis=-1, keepdims=True) + self.epsilon
+        r = np.sqrt(s)
+        n = x / r
         self._cache = (x, r, s, n)
         return n * self.weight if apply_weight else n
 
