@@ -2,9 +2,10 @@
 import math
 from datetime import datetime
 
-import numpy as np
+import cupy as np
 from .optimizer import AdamW
 from .cqa import softmax
+import numpy
 
 
 class Runner:
@@ -34,7 +35,7 @@ class Runner:
             logits = logits[:, -1, :] / max(temperature, 1e-5)
             probs = softmax(logits, axis=-1)            # (B, V)
 
-            nxt = np.array([rng.choice(self.model.vocab_size, p=probs[b])
+            nxt = np.array([rng.choice(self.model.vocab_size, size=1, p=probs[b])[0]
                             for b in range(probs.shape[0])], dtype=np.int64)[:, None]
             ctx = np.concatenate([ctx, nxt], axis=1)
         return ctx
@@ -45,7 +46,7 @@ class Runner:
             x, y = self.batch_loader.get_batch(split, self.B, self.T)
             _, loss = self.model.forward(x, y)
             losses.append(float(loss))
-        return float(np.mean(losses))
+        return float(np.mean(np.asarray(losses)))
 
     def _eval_token_accuracy(self, split, n=1):
         correct1, correct5, total = 0, 0, 0
@@ -70,9 +71,9 @@ class Runner:
             logits, _ = self.model.forward(ctx_cond)
             probs = softmax(logits[:, -1, :] / max(temperature, 1e-5), axis=-1)
             entropies.append(float(-np.sum(probs[0] * np.log(probs[0] + 1e-12))))
-            nxt = np.array([[rng.choice(self.model.vocab_size, p=probs[0])]], dtype=np.int64)
+            nxt = np.array([[rng.choice(self.model.vocab_size, size=1, p=probs[0])[0]]], dtype=np.int64)
             ctx = np.concatenate([ctx, nxt], axis=1)
-        return float(np.mean(entropies)), ctx
+        return float(np.mean(np.asarray(entropies))), ctx
 
     def train(self):
         tok, T = self.tokenizer, self.T
@@ -174,7 +175,7 @@ class Runner:
         ax_ppl.tick_params(axis='y', labelcolor='#9467bd')
         ax_ppl.legend(loc='lower right')
 
-        gap = np.array(history["val_loss"]) - np.array(history["train_loss"])
+        gap = numpy.array(history["val_loss"]) - numpy.array(history["train_loss"])
         ax_gap.fill_between(steps, 0, gap, where=(gap >= 0),
                             color='#d62728', alpha=0.25, label='Val > Train (overfit)')
         ax_gap.fill_between(steps, 0, gap, where=(gap < 0),
@@ -214,7 +215,7 @@ class Runner:
         print(f"Saved dashboard to {save_path}")
 
     def print_summary(self, history):
-        best_idx = int(np.argmin(history["val_loss"]))
+        best_idx = int(numpy.argmin(history["val_loss"]))
         final_idx = -1
         print("\nFinal Results:")
         print(f"  Final train loss:     {history['train_loss'][final_idx]:.4f}")
